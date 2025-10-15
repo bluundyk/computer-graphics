@@ -1,0 +1,316 @@
+import numpy as np
+from PIL import Image
+
+#12
+def cos_of_light(normal_vec, l = [0, 0, 1]):
+    return ((np.dot(normal_vec, l)) / (np.linalg.norm(normal_vec) * np.linalg.norm(l)))
+
+
+#10
+def draw_rabbit(vertices, polygons, temp1=29000, temp2=1700):
+    img = np.zeros((5000, 5000, 3), dtype=np.uint8)
+    #14
+    z_buffer = np.full((5000, 5000), np.inf)
+
+    vertices = np.array(vertices)
+    vertices = vertices*temp1 + temp2
+    for polygon in polygons:
+        idx1 = polygon[0] - 1
+        idx2 = polygon[1] - 1
+        idx3 = polygon[2] - 1
+            
+        x0, y0, z0 = vertices[idx1]
+        x1, y1, z1 = vertices[idx2]
+        x2, y2, z2 = vertices[idx3]
+        draw_triangles(img, x0, x1, x2, y0, y1, y2, z0, z1, z2, z_buffer)
+    
+    image = Image.fromarray(img, mode='RGB')
+    image = image.transpose(Image.FLIP_TOP_BOTTOM)
+    image.save("img_rabbit_with_triangles.png")
+
+#7
+def barycentric_coordinates(x0, x, x1, x2, y0, y, y1, y2, znam):
+    lambda0 = ((x - x2) * (y1 - y2) - (x1 - x2) * (y - y2)) / znam
+    lambda1 = ((x0 - x2) * (y - y2) - (x - x2) * (y0 - y2)) / znam
+    lambda2 = 1.0 - lambda0 - lambda1
+    return lambda0, lambda1, lambda2
+
+#8
+def draw_triangles(img_triangles, x0, x1, x2, y0, y1, y2, z0, z1, z2, z_buffer):
+    width, height = img_triangles.shape[:2]
+    xmin = int(round(min(x0, x1, x2)))
+    ymin = int(round(min(y0, y1, y2)))
+    xmax = int(round(max(x0, x1, x2)))
+    ymax = int(round(max(y0, y1, y2)))
+
+    if (xmin < 0): xmin = 0
+    if(ymin < 0): ymin = 0
+    if(xmax > width - 1): xmax = width - 1
+    if(ymax > height - 1): ymax = height - 1 
+
+    #11
+    normal_vec = np.cross([x1 - x2, y1 - y2, z1 - z2], [x1 - x0, y1 - y0, z1 - z0])
+
+    cos = cos_of_light(normal_vec)
+    if(cos < 0):
+        #13
+        color = (-66*cos, -49*cos, -137*cos)
+        znam = (x0 - x2) * (y1 - y2) - (x1 - x2) * (y0 - y2)
+        for y in range(ymin, ymax + 1):
+            for x in range(xmin, xmax + 1):
+                k, m, n = barycentric_coordinates(x0, x, x1, x2, y0, y, y1, y2, znam)
+                if(k >= 0 and m >= 0 and n >= 0):
+                    z_coord = k*z0 + m*z1 + n*z2
+                    if(z_coord < z_buffer[y, x]):
+                        z_buffer[y, x] = z_coord
+                        img_triangles[y, x] = color
+    return img_triangles
+#6
+def draw_edges(vertices, polygons, temp1=29000, temp2=1700):
+    img = np.zeros((5000, 5000), dtype=np.uint8)
+    
+    for polygon in polygons:
+        
+        for i in range(len(polygon)):
+            # Получаем индексы текущей и следующей вершины
+            idx1 = polygon[i] - 1
+            idx2 = polygon[(i + 1) % len(polygon)] - 1  # замыкаем полигон
+            
+            # Получаем координаты вершин
+            if (0 <= idx1 < len(vertices) and 0 <= idx2 < len(vertices)):
+                x1, y1, z1 = vertices[idx1]
+                x2, y2, z1 = vertices[idx2]
+                
+                # Преобразуем координаты (игнорируем Z)
+                screen_x1 = int(round(temp1 * x1 + temp2))
+                screen_y1 = int(round(temp1 * y1 + temp2))
+                screen_x2 = int(round(temp1 * x2 + temp2))
+                screen_y2 = int(round(temp1 * y2 + temp2))
+                
+                # Рисуем линию алгоритмом Брезенхема
+                draw_line5(img, screen_x1, screen_y1, screen_x2, screen_y2, 255)
+    
+    # Сохраняем изображение
+    image = Image.fromarray(img, mode='L')
+    image = image.transpose(Image.FLIP_TOP_BOTTOM)
+    image.save("best_img.png")
+
+
+#5
+def read_polygons(filename):
+    polygons = []
+    spl = []
+
+    file = open(filename, 'r')
+
+    for line in file:
+        if line.startswith('f '):  # вершины
+            spl = [int(x.split('/')[0]) for x in line.split()[1:4]]
+            polygons.append(spl)
+    file.close()
+    return polygons
+
+#4
+def draw_vertex(vertex, temp1 = 4000, temp2 = 450):
+    img_vertex = np.zeros((1000, 1000), dtype = np.uint8)
+
+    for v in vertex:
+        x, y, z = v
+
+        show_x = int(temp1 * x + temp2)
+        show_y = int(temp1 * y + temp2)
+
+        if (0 <= show_x <= 1000 and 0 <= show_y <= 1000):
+            img_vertex[show_y, show_x] = 255
+        
+    img = Image.fromarray(img_vertex, mode = 'L')
+    img = img.transpose(Image.FLIP_TOP_BOTTOM)
+    img.save('img_vertex.png')
+
+#3
+def read_vertex(filename):
+    vertices = []
+
+    file = open(filename, 'r')
+    for line in file:
+        if line.startswith('v '):  # вершины
+            spl = list(map(float, line.split()[1:4]))
+            vertices.append(spl)
+    file.close()
+    return vertices 
+
+#2
+def draw_line1(img_star1, x0, y0, x1, y1, count, color):
+    step = 1.0 / count
+    for t in np.arange(0, 1, step):
+        x = round((1.0 - t) * x0 + t * x1)
+        y = round((1.0 - t) * y0 + t * y1)
+        img_star1[y, x] = color 
+
+def draw_line2(img_star2, x0, y0, x1, y1, color):
+    count = np.sqrt((x0 - x1)**2 + (y0 - y1)**2)
+    step = 1.0 / count
+    for t in np.arange(0, 1, step):
+        x = round((1.0 - t) * x0 + t * x1)
+        y = round((1.0 - t) * y0 + t * y1)
+        img_star2[y, x] = color
+
+def draw_line3(img_star3, x0, y0, x1, y1, color):
+    #Фикс 1: проверка порядка точек
+    if (x0 > x1):
+        x0, x1 = x1, x0
+        y0, y1 = y1, y0
+
+    #Фикс 2: проверка, какая ось главная
+    xchange = False
+    if (abs(x0 - x1) < abs(y0 - y1)):
+        x0, y0 = y0, x0
+        x1, y1 = y1, x1
+        xchange = True
+        if (x0 > x1):
+            x0, x1 = x1, x0
+            y0, y1 = y1, y0
+
+    for x in range(x0, x1):
+        t = (x - x0) / (x1 - x0)
+        y = round((1.0 - t) * y0 + t * y1)
+        if (xchange):
+            img_star3[x, y] = color  
+        else:
+            img_star3[y, x] = color
+
+def draw_line4(img_star4, x0, y0, x1, y1, color):
+    if (x0 > x1):
+        x0, x1 = x1, x0
+        y0, y1 = y1, y0
+    
+    xChange = False 
+    if (abs(y0 - y1) > abs(x0 - x1)):
+        x0, y0 = y0, x0
+        x1, y1 = y1, x1
+        xChange = True 
+        if (x0 > x1):
+            x0, x1 = x1, x0
+            y0, y1 = y1, y0
+    y = y0
+    dy = abs(y1 - y0)/(x1 - x0)
+    derror = 0.0
+    y_update = 1 if y1 > y0 else -1
+
+    for x in range(x0, x1):
+        if (xChange):
+            img_star4[x, y] = color
+        else:
+            img_star4[y, x] = color
+        derror += dy
+        if (derror > 0.5):
+            derror -= 1.0
+            y += y_update
+
+def draw_line5(img_star5, x0, y0, x1, y1, color):
+    if (x0 > x1):
+        x0, x1 = x1, x0
+        y0, y1 = y1, y0
+    
+    xChange = False 
+    if (abs(y0 - y1) > abs(x0 - x1)):
+        x0, y0 = y0, x0
+        x1, y1 = y1, x1
+        xChange = True 
+        if (x0 > x1):
+            x0, x1 = x1, x0
+            y0, y1 = y1, y0
+
+    y = y0
+    dy = 2*abs(y1 - y0)
+    derror = 0.0
+    y_update = 1 if y1 > y0 else -1
+
+    for x in range(x0, x1):
+        if (xChange):
+            img_star5[x, y] = color
+        else:
+            img_star5[y, x] = color
+        derror += dy
+        if (derror > (x1 - x0)):
+            derror -= 2*(x1 - x0)
+            y += y_update
+
+#1
+#1.1
+img_mat = np.zeros((600, 800), dtype = np.uint8)
+img = Image.fromarray(img_mat, mode = 'L')
+img.save('black_img.png')
+
+#1.2
+img_mat = np.zeros((600, 800), dtype = np.uint8)
+for i in range(600):
+    for j in range(800):
+        img_mat[i, j] = 255
+img = Image.fromarray(img_mat, 'L')
+img.save('white_img.png')
+
+#1.3
+img_mat = np.zeros((600, 800, 3), dtype = np.uint8)
+for i in range(600):
+    for j in range(800):
+        img_mat[i, j] = (255, 0, 0)
+img = Image.fromarray(img_mat, mode = 'RGB')
+img.save('red_img.png')
+
+#1.4
+img_mat = np.zeros((600, 800, 3), dtype = np.uint8)
+for i in range(600):
+    for j in range(800):
+        img_mat[i, j] = (2*i + j) % 256
+img = Image.fromarray(img_mat, mode = 'RGB')
+img.save('interested_img.png')
+
+#2
+img_star1 = np.zeros((200, 200), dtype = np.uint8)
+img_star2 = np.zeros((200, 200), dtype = np.uint8)
+img_star3 = np.zeros((200, 200), dtype = np.uint8)
+img_star4 = np.zeros((200, 200), dtype = np.uint8)
+img_star5 = np.zeros((200, 200), dtype = np.uint8)
+for k in range(13):
+    x0, y0 = 100, 100
+    x1 = 100 + int(95 * np.cos(2 * 3.14 * k / 13))
+    y1 = 100 + int(95 * np.sin(2 * 3.14 * k / 13))
+    draw_line1(img_star1, x0, y0, x1, y1, 100, 255)
+    draw_line2(img_star2, x0, y0, x1, y1, 255)
+    draw_line3(img_star3, x0, y0, x1, y1, 255)
+    draw_line4(img_star4, x0, y0, x1, y1, 255)
+    draw_line5(img_star5, x0, y0, x1, y1, 255)
+
+img1 = Image.fromarray(img_star1, mode = 'L')
+img2 = Image.fromarray(img_star2, mode = 'L')
+img3 = Image.fromarray(img_star3, mode = 'L')
+img4 = Image.fromarray(img_star4, mode = 'L')
+img5 = Image.fromarray(img_star5, mode = 'L')
+img1.save('img_star1.png')
+img2.save('img_star2.png')
+img3.save('img_star3.png')
+img4.save('img_star4.png')
+img5.save('img_star5.png')
+
+#3
+vertex = read_vertex('model_1.obj')
+
+#4
+draw_vertex(vertex)
+
+#5
+polygons = read_polygons('model_1.obj')
+
+#6
+draw_edges(vertex, polygons)
+
+#9
+img_triangles = np.zeros((1000, 1000, 3), dtype = np.uint8)
+z_buffer = np.full((1000, 1000), np.inf)
+img_triangles = draw_triangles(img_triangles, 500, 960, 1600, 550, 735, 250, 345, 700, 900, z_buffer)
+img_triang = Image.fromarray(img_triangles, mode = 'RGB')
+img_triang.save('img_triang.png')
+
+#10
+draw_rabbit(vertex, polygons)
