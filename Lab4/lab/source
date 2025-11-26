@@ -1,0 +1,227 @@
+import numpy as np
+from PIL import Image 
+
+#матрица поворота и сдвига
+def rotate_and_shift_rabbit(tx, ty, tz, a, b, c, x, y, z):
+    help_matrix1 = np.array([[1, 0, 0], [0, np.cos(a), np.sin(a)], [0, -np.sin(a), np.cos(a)]])
+    help_matrix2 = np.array([[np.cos(b), 0, np.sin(b)], [0, 1, 0], [-np.sin(b), 0, np.cos(b)]])
+    help_matrix3 = np.array([[np.cos(c), np.sin(c), 0], [-np.sin(c), np.cos(c), 0], [0, 0, 1]])
+    r = np.dot((np.dot(help_matrix1, help_matrix2)), help_matrix3)
+    coord_matrix = np.array([x, y, z])
+    first_term = np.dot(r, coord_matrix)
+    shift_matrix = np.array([tx, ty, tz])
+    new_coord_matrix = first_term + shift_matrix
+    return new_coord_matrix[0], new_coord_matrix[1], new_coord_matrix[2]
+
+#вычисление угла освещения
+def cos_of_light(normal_vec, l = [0, 0, 1]):
+    return ((np.dot(normal_vec, l)) / (np.linalg.norm(normal_vec) * np.linalg.norm(l)))
+
+#вычисление нормалей к каждой вершине
+def vertex_normals(vertices, polygons):
+    vertex_normals = []
+    for i in range(len(vertices)):
+        normal_vec = np.array([0.0, 0.0, 0.0])
+        vertex_normals.append(normal_vec)
+    
+    for polygon in polygons:
+        idx1 = polygon[0] - 1
+        idx2 = polygon[1] - 1
+        idx3 = polygon[2] - 1
+        v1 = np.array(vertices[idx1])
+        v2 = np.array(vertices[idx2])
+        v3 = np.array(vertices[idx3])
+        normal_vec = np.cross(v2 - v1, v3 - v1)
+        normal_length = np.linalg.norm(normal_vec)
+        if(normal_length > 0):
+            vertex_normals[idx1] += normal_vec
+            vertex_normals[idx2] += normal_vec
+            vertex_normals[idx3] += normal_vec
+
+    for i in range(len(vertex_normals)):
+        length = np.linalg.norm(vertex_normals[i])
+        if (length > 0):
+            vertex_normals[i] = vertex_normals[i] / length
+    
+    return vertex_normals
+    
+
+#отрисовка кролика
+def draw_rabbit(vertices, polygons, coord_texture, number_coord_texture, img_texture):
+    img = np.zeros((500, 500, 3), dtype=np.uint8)
+    z_buffer = np.full((500, 500), np.inf)
+    vertex_normal = vertex_normals(vertices, polygons)
+
+    rotated_and_shifted_vertices = []
+    for i in range(len(vertices)):
+        vertex = vertices[i] 
+        x, y, z = vertex
+        new_x, new_y, new_z = rotate_and_shift_rabbit(-0.08, -0.12, 0.2, 0, -np.pi, 0, x, y, z)
+        rotated_and_shifted_vertices.append([new_x, new_y, new_z]) 
+
+    for idx_count, polygon in enumerate(polygons):
+        if (idx_count >= len(number_coord_texture)):
+            break
+        idx1 = polygon[0] - 1
+        idx2 = polygon[1] - 1
+        idx3 = polygon[2] - 1
+            
+        x0, y0, z0 = rotated_and_shifted_vertices[idx1]
+        x1, y1, z1 = rotated_and_shifted_vertices[idx2]
+        x2, y2, z2 = rotated_and_shifted_vertices[idx3]
+
+        I0 = cos_of_light(vertex_normal[idx1])
+        I1 = cos_of_light(vertex_normal[idx2])
+        I2 = cos_of_light(vertex_normal[idx3])
+
+        texture_idx1 = number_coord_texture[idx_count][0] - 1
+        texture_idx2 = number_coord_texture[idx_count][1] - 1
+        texture_idx3 = number_coord_texture[idx_count][2] - 1
+
+        if (texture_idx1 < len(coord_texture) and texture_idx2 < len(coord_texture) and 
+            texture_idx3 < len(coord_texture) and texture_idx1 >= 0 and 
+            texture_idx2 >= 0 and texture_idx3 >= 0):
+            
+            ut0, vt0 = coord_texture[texture_idx1]
+            ut1, vt1 = coord_texture[texture_idx2]
+            ut2, vt2 = coord_texture[texture_idx3]
+
+            draw_triangles(img, x0, x1, x2, y0, y1, y2, z0, z1, z2, I0, I1, I2, z_buffer, img_texture, ut0, ut1, ut2, vt0, vt1, vt2)
+        else:
+            draw_triangles(img, x0, x1, x2, y0, y1, y2, z0, z1, z2, I0, I1, I2, z_buffer, img_texture, 0, 0, 0, 0, 0, 0)
+    
+    image = Image.fromarray(img, mode='RGB')
+    image = image.transpose(Image.FLIP_TOP_BOTTOM)
+    image.save("img_rabbit_with_triangles.png")
+
+#вычисление барицентрических координат
+def barycentric_coordinates(x0, x, x1, x2, y0, y, y1, y2, znam):
+    lambda0 = ((x - x2) * (y1 - y2) - (x1 - x2) * (y - y2)) / znam
+    lambda1 = ((x0 - x2) * (y - y2) - (x - x2) * (y0 - y2)) / znam
+    lambda2 = 1.0 - lambda0 - lambda1
+    return lambda0, lambda1, lambda2
+
+#отрисовка треугольников
+def draw_triangles(img_triangles, x0, x1, x2, y0, y1, y2, z0, z1, z2, I0, I1, I2, z_buffer, img_texture, ut0, ut1, ut2, vt0, vt1, vt2): 
+    width, height = img_triangles.shape[:2]
+    #переход к экранным координатам
+    u0 = 800*x0/z0 + 500
+    v0 = 800*y0/z0 + 500
+    u1 = 800*x1/z1 + 500
+    v1 = 800*y1/z1 + 500
+    u2 = 800*x2/z2 + 500
+    v2 = 800*y2/z2 + 500
+    xmin = int(round(min(u0, u1, u2)))
+    ymin = int(round(min(v0, v1, v2)))
+    xmax = int(round(max(u0, u1, u2)))
+    ymax = int(round(max(v0, v1, v2)))
+    #проверяем, что не вышли за границы
+    if (xmin < 0): xmin = 0
+    if(ymin < 0): ymin = 0
+    if(xmax > width - 1): xmax = width - 1
+    if(ymax > height - 1): ymax = height - 1 
+
+    znam = (u0 - u2) * (v1 - v2) - (u1 - u2) * (v0 - v2)
+    if abs(znam) < 1e-10:
+        return
+    
+    wt, ht = img_texture.size
+    for y in range(ymin, ymax + 1):
+        for x in range(xmin, xmax + 1):
+            k, m, n = barycentric_coordinates(u0, x, u1, u2, v0, y, v1, v2, znam)
+            if(k >= 0 and m >= 0 and n >= 0):
+                z_coord = k*z0 + m*z1 + n*z2
+                if(z_coord < z_buffer[y, x]):
+                    texture_x = int((k*ut0 + m*ut1 + n*ut2)*(wt - 1))
+                    texture_y = int((1 - (k*vt0 + m*vt1 + n*vt2))*(ht - 1))
+
+                    texture_x = max(0, min(wt - 1, texture_x))
+                    texture_y = max(0, min(ht - 1, texture_y))
+
+                    color_texture = img_texture.getpixel((texture_x, texture_y))
+                    I = max(0.0, k*I0 + m*I1 + n*I2)
+                    red = int(color_texture[0]*I)
+                    green = int(color_texture[1]*I)
+                    blue = int(color_texture[2]*I)
+                    img_triangles[y, x] = (red, green, blue)
+
+                    z_buffer[y, x] = z_coord
+
+#чтение номеров координат текстур
+def read_number_coord_texture(filename):
+    number_coord_texture = []
+
+    file = open(filename, 'r')
+    for line in file:
+        if line.startswith('f '):
+            vertices = line.split()[1:]
+            
+            if (len(vertices) >= 3):
+                first_texture = int(vertices[0].split('/')[1])
+                
+                for i in range(1, len(vertices) - 1):
+                    tex1 = int(vertices[i].split('/')[1])
+                    tex2 = int(vertices[i + 1].split('/')[1])
+                    number_coord_texture.append([first_texture, tex1, tex2])
+                    
+    file.close()
+    return number_coord_texture
+
+#чтение координат текстуры
+def read_coord_texture(filename):
+    coord_texture = []
+
+    file = open(filename, 'r')
+    for line in file:
+        if (not line):
+            continue
+        if line.startswith('vt '):
+            spl = list(map(float, line.split()[1:3]))
+            coord_texture.append(spl)
+    file.close()
+    return coord_texture
+
+#чтение полигонов
+def read_polygons(filename):
+    polygons = []
+
+    file = open(filename, 'r')
+    for line in file:
+        if (line.startswith('f ')):
+            vertices = line.split()[1:]
+            
+            if (len(vertices) >= 3):
+                first_vertex = int(vertices[0].split('/')[0])
+                
+                for i in range(1, len(vertices) - 1):
+                    v1 = int(vertices[i].split('/')[0])
+                    v2 = int(vertices[i + 1].split('/')[0])
+                    polygons.append([first_vertex, v1, v2])
+                    
+    file.close()
+    return polygons
+
+#чтение вершин
+def read_vertex(filename):
+    vertices = []
+
+    file = open(filename, 'r')
+    for line in file:
+        if (not line):
+            continue
+        if line.startswith('v '):
+            spl = list(map(float, line.split()[1:4]))
+            vertices.append(spl)
+    file.close()
+    return vertices
+
+#считывание данных
+vertex = read_vertex('model_1.obj')
+polygons = read_polygons('model_1.obj')
+coord_texture = read_coord_texture('model_1.obj')
+number_coord_texture = read_number_coord_texture('model_1.obj')
+
+#считывание текстуры
+img_texture = Image.open('bunny-atlas.jpg')
+#запуск основной функции
+draw_rabbit(vertex, polygons, coord_texture, number_coord_texture, img_texture)
